@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hush — adaptive sound masking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#14161f;
+    --night-2:#1b1e2b;
+    --panel:#1f2333;
+    --haze:#e7e9f0;
+    --haze-dim:#9aa0b5;
+    --haze-faint:#5d6377;
+    --calm:#5fd3c4;
+    --calm-2:#8c7ce0;
+    --ember:#e8a15c;
+    --line:rgba(231,233,240,.09);
+    --line-2:rgba(231,233,240,.14);
+    --display:"Fraunces",Georgia,"Times New Roman",serif;
+    --body:"Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--body);
+    color:var(--haze);
+    background:
+      radial-gradient(120% 80% at 50% -10%, #1d2233 0%, var(--night) 55%, #0f111a 100%);
+    min-height:100dvh;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    padding:clamp(16px,4vw,40px) clamp(14px,4vw,24px) 48px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{width:100%;max-width:600px}
+
+  /* header */
+  .eyebrow{
+    font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--calm);font-weight:600;margin:0 0 10px;
+  }
+  h1{
+    font-family:var(--display);
+    font-weight:500;
+    font-size:clamp(44px,12vw,72px);
+    line-height:.92;
+    letter-spacing:-.02em;
+    margin:0;
+    background:linear-gradient(180deg,var(--haze),#aeb4c9);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .sub{
+    color:var(--haze-dim);
+    font-size:15px;line-height:1.5;
+    margin:14px 0 0;max-width:46ch;
+  }
+
+  /* the field — signature element */
+  .field{
+    position:relative;
+    margin:26px 0 22px;
+    border:1px solid var(--line);
+    border-radius:18px;
+    background:linear-gradient(180deg,#161925,#12141d);
+    overflow:hidden;
+    box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 24px 60px -36px #000;
+  }
+  canvas{display:block;width:100%;height:208px}
+  .field-hint{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    text-align:center;padding:0 24px;
+    color:var(--haze-faint);font-size:14px;letter-spacing:.01em;
+    transition:opacity .5s ease;pointer-events:none;
+  }
+  .field.live .field-hint{opacity:0}
+  .legend{
+    position:absolute;left:14px;bottom:11px;display:flex;gap:16px;
+    font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--haze-faint);
+    opacity:0;transition:opacity .5s ease;
+  }
+  .field.live .legend{opacity:1}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .dot.calm{background:var(--calm)}
+  .dot.ember{background:var(--ember)}
+
+  /* primary transport */
+  .transport{display:flex;align-items:center;gap:16px;margin-bottom:22px}
+  .play{
+    appearance:none;border:none;cursor:pointer;
+    font-family:var(--body);font-size:16px;font-weight:600;color:var(--night);
+    background:linear-gradient(180deg,#7fe0d3,#4cc3b3);
+    padding:15px 30px;border-radius:999px;
+    display:inline-flex;align-items:center;gap:11px;
+    box-shadow:0 10px 30px -12px rgba(95,211,196,.6);
+    transition:transform .12s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .play:hover{filter:brightness(1.05)}
+  .play:active{transform:translateY(1px)}
+  .play.on{
+    background:linear-gradient(180deg,#2a3042,#222637);
+    color:var(--haze);
+    box-shadow:0 0 0 1px var(--line-2) inset;
+  }
+  .play .glyph{width:13px;height:14px;display:inline-block;position:relative}
+  .play .glyph::before,.play .glyph::after{content:"";position:absolute;top:0;bottom:0}
+  /* play triangle */
+  .play:not(.on) .glyph::before{
+    left:1px;width:0;height:0;border-left:12px solid currentColor;
+    border-top:7px solid transparent;border-bottom:7px solid transparent;
+  }
+  .play:not(.on) .glyph::after{display:none}
+  /* pause bars */
+  .play.on .glyph::before{left:1px;width:4px;background:currentColor;border-radius:1px}
+  .play.on .glyph::after{right:1px;width:4px;background:currentColor;border-radius:1px}
+  .running-note{font-size:13px;color:var(--haze-dim)}
+
+  /* controls */
+  .controls{display:grid;gap:20px}
+  .row{display:grid;gap:9px}
+  .row-head{display:flex;justify-content:space-between;align-items:baseline}
+  .row-head label{font-size:13px;font-weight:500;letter-spacing:.01em;color:var(--haze)}
+  .val{font-family:var(--mono);font-size:12px;color:var(--haze-dim);font-variant-numeric:tabular-nums}
+
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:30px;background:transparent;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:6px;border-radius:999px;
+    background:linear-gradient(90deg,var(--calm) 0%,var(--calm) var(--fill,30%),#2a2f42 var(--fill,30%),#2a2f42 100%);
+  }
+  input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:#2a2f42}
+  input[type=range]::-moz-range-progress{height:6px;border-radius:999px;background:var(--calm)}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:18px;height:18px;margin-top:-6px;border-radius:50%;
+    background:var(--haze);box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 4px rgba(95,211,196,.18);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:18px;height:18px;border:none;border-radius:50%;background:var(--haze);
+    box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 4px rgba(95,211,196,.18);
+  }
+
+  /* preset chips */
+  .chips{display:flex;gap:9px}
+  .chip{
+    flex:1;appearance:none;cursor:pointer;font-family:var(--body);
+    font-size:13px;font-weight:500;color:var(--haze-dim);
+    background:#1d2030;border:1px solid var(--line);border-radius:12px;
+    padding:11px 8px;transition:color .15s,border-color .15s,background .15s;
+  }
+  .chip:hover{color:var(--haze)}
+  .chip.sel{
+    color:var(--night);background:linear-gradient(180deg,#cfd9ee,#aeb8d3);
+    border-color:transparent;font-weight:600;
+  }
+  .chip small{display:block;font-size:10.5px;font-weight:500;opacity:.7;margin-top:2px}
+
+  /* adapt block */
+  .adapt{
+    margin-top:6px;padding:18px;border:1px solid var(--line);
+    border-radius:16px;background:linear-gradient(180deg,#191c28,#15171f);
+  }
+  .adapt-top{display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .adapt-top h2{font-family:var(--display);font-weight:500;font-size:18px;margin:0;letter-spacing:-.01em}
+  .listen{
+    appearance:none;cursor:pointer;font-family:var(--body);font-size:13.5px;font-weight:600;
+    color:var(--haze);background:#23283a;border:1px solid var(--line-2);
+    border-radius:999px;padding:11px 18px;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:9px;transition:background .15s,border-color .15s;
+  }
+  .listen:hover{background:#2a3044}
+  .listen:disabled{opacity:.55;cursor:default}
+  .listen .ring{
+    width:9px;height:9px;border-radius:50%;background:var(--ember);
+    box-shadow:0 0 0 0 rgba(232,161,92,.6);
+  }
+  .listen.listening .ring{animation:pulse 1.1s ease-out infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(232,161,92,.55)}100%{box-shadow:0 0 0 12px rgba(232,161,92,0)}}
+  .adapt-note{margin:13px 0 0;font-size:12.5px;line-height:1.55;color:var(--haze-faint)}
+  .adapt-status{margin:11px 0 0;font-size:13px;line-height:1.5;color:var(--calm);min-height:1px}
+  .adapt-status.warn{color:var(--ember)}
+
+  /* focus + footer */
+  :focus-visible{outline:2px solid var(--calm);outline-offset:3px;border-radius:6px}
+  footer{margin-top:26px;font-size:12px;line-height:1.6;color:var(--haze-faint);border-top:1px solid var(--line);padding-top:16px}
+  footer b{color:var(--haze-dim);font-weight:600}
+
+  @media (max-width:430px){
+    .transport{flex-wrap:wrap}
+    .chip small{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <p class="eyebrow">Adaptive sound masking</p>
+    <h1>Hush</h1>
+    <p class="sub">Raise a calm field of sound until the snoring sinks into it and stops grabbing your attention. Built to run alongside your headphones' noise cancelling.</p>
+
+    <div class="field" id="field">
+      <canvas id="viz" aria-label="Live view of the masking sound and any detected snore"></canvas>
+      <div class="field-hint" id="hint">Press Start, then dial the volume up just until the snore disappears.</div>
+      <div class="legend">
+        <span><i class="dot calm"></i>masking field</span>
+        <span><i class="dot ember"></i>snore (after listening)</span>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button class="play" id="play" aria-pressed="false"><span class="glyph"></span><span id="playLabel">Start</span></button>
+      <span class="running-note" id="runNote"></span>
+    </div>
+
+    <div class="controls">
+      <div class="row">
+        <div class="row-head"><label for="vol">Volume</label><span class="val" id="volVal">22%</span></div>
+        <input id="vol" type="range" min="0" max="100" value="22" aria-describedby="volVal">
+      </div>
+
+      <div class="row">
+        <div class="row-head"><label>Character</label><span class="val" id="presetVal">Balanced</span></div>
+        <div class="chips" role="group" aria-label="Sound character preset">
+          <button class="chip" data-preset="deep">Deep<small>low rumble</small></button>
+          <button class="chip sel" data-preset="balanced">Balanced<small>all-round</small></button>
+          <button class="chip" data-preset="bright">Bright<small>whistle/wheeze</small></button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-head"><label for="tone">Tone</label><span class="val" id="toneVal">darker — brighter</span></div>
+        <input id="tone" type="range" min="0" max="100" value="55" aria-label="Tone, darker to brighter">
+      </div>
+
+      <div class="row">
+        <div class="row-head"><label for="bass">Bass</label><span class="val" id="bassVal">+5 dB</span></div>
+        <input id="bass" type="range" min="0" max="100" value="42" aria-label="Bass amount">
+      </div>
+
+      <div class="row">
+        <div class="row-head"><label>Match the snore</label><span class="val" id="matchVal">— pick one —</span></div>
+        <div class="chips" role="group" aria-label="Match the snore type — no microphone needed">
+          <button class="chip" data-snore="rumble">Rumble<small>low &amp; chesty</small></button>
+          <button class="chip" data-snore="buzz">Buzz<small>mid &amp; raspy</small></button>
+          <button class="chip" data-snore="whistle">Whistle<small>high &amp; thin</small></button>
+        </div>
+      </div>
+
+      <div class="adapt">
+        <div class="adapt-top">
+          <h2>Listen &amp; adapt</h2>
+          <button class="listen" id="listen"><span class="ring"></span>Listen &amp; adapt</button>
+        </div>
+        <p class="adapt-note">The automatic version: it uses your mic for about five seconds to find where the snore sits, then shapes the masking sound to cover it and switches the mic off — nothing is recorded or sent, it all stays on your device. The in-app preview usually blocks mic access; if the button says so, open this page in its own browser tab, or just use <b>Match the snore</b> above, which needs no mic.</p>
+        <p class="adapt-status" id="status" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <footer>
+      <b>Getting the most out of it:</b> set your headphones to full noise cancelling (not ambient) so the steady low drone is gone, then let this cover the irregular snore on top. Keep the volume as low as it can go while still working. For long study sessions, keep this tab open and in the foreground — phone browsers pause audio when the screen locks. The mic in “Listen &amp; adapt” is blocked inside this embedded view; use “Match the snore” for the same effect with no mic, or open the page in its own browser tab to enable the mic.
+    </footer>
+  </main>
+
+<script>
+(function(){
+  "use strict";
+  var AC = window.AudioContext || window.webkitAudioContext;
+
+  // ---- element refs ----
+  var fieldEl = document.getElementById('field');
+  var canvas  = document.getElementById('viz');
+  var hint    = document.getElementById('hint');
+  var play    = document.getElementById('play');
+  var playLabel = document.getElementById('playLabel');
+  var runNote = document.getElementById('runNote');
+  var vol     = document.getElementById('vol');
+  var volVal  = document.getElementById('volVal');
+  var tone    = document.getElementById('tone');
+  var toneVal = document.getElementById('toneVal');
+  var bass    = document.getElementById('bass');
+  var bassVal = document.getElementById('bassVal');
+  var presetVal = document.getElementById('presetVal');
+  var listen  = document.getElementById('listen');
+  var status  = document.getElementById('status');
+  var matchVal  = document.getElementById('matchVal');
+  var charChips = Array.prototype.slice.call(document.querySelectorAll('.chip[data-preset]'));
+  var snoreChips= Array.prototype.slice.call(document.querySelectorAll('.chip[data-snore]'));
+
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- audio state ----
+  var ctx=null, source=null, lowShelf=null, peak=null, lowpass=null, master=null, analyser=null;
+  var freqBins=null, running=false, rafId=null, listening=false;
+  var snoreSpectrum=null;     // {pts:[{hz,v}], peakHz} once measured
+  var MAXGAIN = 0.55;
+  var F_MIN = 30, F_MAX = 12000;   // visual + tone range
+
+  // ---- mappings ----
+  function toneToHz(v){ return 350 * Math.pow(9000/350, v/100); }      // lowpass cutoff
+  function bassToDb(v){ return (v/100) * 12; }                          // lowshelf gain
+  function volToGain(v){ return Math.pow(v/100, 1.8) * MAXGAIN; }
+  function expFill(el){ el.style.setProperty('--fill', el.value + '%'); }
+
+  // ---- build a seamless stereo noise buffer ----
+  function makeNoise(){
+    var sr = ctx.sampleRate, dur = 4, n = Math.floor(sr*dur);
+    var xf = Math.floor(sr*0.04); // 40ms crossfade for a clickless loop
+    var buf = ctx.createBuffer(2, n, sr);
+    for(var c=0;c<2;c++){
+      var d = buf.getChannelData(c);
+      for(var i=0;i<n;i++) d[i] = Math.random()*2-1;
+      for(var j=0;j<xf;j++){
+        var t=j/xf, a=Math.cos(t*Math.PI/2), b=Math.sin(t*Math.PI/2);
+        d[j] = d[j]*b + d[n-xf+j]*a;
+      }
+    }
+    return buf;
+  }
+
+  function buildGraph(){
+    ctx = new AC();
+    source = ctx.createBufferSource();
+    source.buffer = makeNoise();
+    source.loop = true;
+
+    lowShelf = ctx.createBiquadFilter(); lowShelf.type='lowshelf'; lowShelf.frequency.value=130;
+    peak     = ctx.createBiquadFilter(); peak.type='peaking'; peak.frequency.value=200; peak.Q.value=1.1; peak.gain.value=0;
+    lowpass  = ctx.createBiquadFilter(); lowpass.type='lowpass'; lowpass.Q.value=0.7;
+    master   = ctx.createGain();
+    analyser = ctx.createAnalyser(); analyser.fftSize=2048; analyser.smoothingTimeConstant=0.82;
+    freqBins = new Uint8Array(analyser.frequencyBinCount);
+
+    // analyser sits BEFORE master so the field stays lively at any volume
+    source.connect(lowShelf); lowShelf.connect(peak); peak.connect(lowpass);
+    lowpass.connect(analyser); analyser.connect(master); master.connect(ctx.destination);
+
+    source.start();
+    applyAll();
+  }
+
+  function applyAll(){
+    if(!ctx) return;
+    var now = ctx.currentTime;
+    lowpass.frequency.setTargetAtTime(toneToHz(+tone.value), now, 0.03);
+    lowShelf.gain.setTargetAtTime(bassToDb(+bass.value), now, 0.03);
+    master.gain.setTargetAtTime(volToGain(+vol.value), now, 0.04);
+  }
+
+  // ---- start / stop ----
+  function start(){
+    if(!ctx) buildGraph();
+    if(ctx.state==='suspended') ctx.resume();
+    running=true;
+    play.classList.add('on'); play.setAttribute('aria-pressed','true');
+    playLabel.textContent='Pause'; runNote.textContent='Masking — adjust freely.';
+    fieldEl.classList.add('live');
+    if(!rafId) draw();
+  }
+  function stop(){
+    running=false;
+    if(ctx) master.gain.setTargetAtTime(0, ctx.currentTime, 0.02);
+    play.classList.remove('on'); play.setAttribute('aria-pressed','false');
+    playLabel.textContent='Start'; runNote.textContent='Paused.';
+  }
+  play.addEventListener('click', function(){ running ? stop() : start(); });
+
+  // ---- controls ----
+  vol.addEventListener('input', function(){ volVal.textContent=vol.value+'%'; expFill(vol); if(running&&ctx) master.gain.setTargetAtTime(volToGain(+vol.value),ctx.currentTime,0.04); });
+  tone.addEventListener('input', function(){ expFill(tone); if(ctx) lowpass.frequency.setTargetAtTime(toneToHz(+tone.value),ctx.currentTime,0.03); markCustom(); });
+  bass.addEventListener('input', function(){ bassVal.textContent='+'+bassToDb(+bass.value).toFixed(0)+' dB'; expFill(bass); if(ctx) lowShelf.gain.setTargetAtTime(bassToDb(+bass.value),ctx.currentTime,0.03); markCustom(); });
+
+  function clearSel(list){ list.forEach(function(c){ c.classList.remove('sel'); }); }
+
+  var PRESETS = { deep:{tone:24,bass:82,name:'Deep'}, balanced:{tone:55,bass:42,name:'Balanced'}, bright:{tone:86,bass:20,name:'Bright'} };
+  function applyPreset(key){
+    var p=PRESETS[key]; if(!p) return;
+    tone.value=p.tone; bass.value=p.bass;
+    expFill(tone); expFill(bass);
+    bassVal.textContent='+'+bassToDb(p.bass).toFixed(0)+' dB';
+    presetVal.textContent=p.name;
+    if(peak&&ctx) peak.gain.setTargetAtTime(0,ctx.currentTime,0.05); // clear any snore-band emphasis
+    snoreSpectrum=null; matchVal.textContent='— pick one —'; clearSel(snoreChips);
+    applyAll();
+  }
+  charChips.forEach(function(c){ c.addEventListener('click', function(){ clearSel(charChips); c.classList.add('sel'); applyPreset(c.dataset.preset); }); });
+  function markCustom(){ if(presetVal.textContent!=='Custom'){ presetVal.textContent='Custom'; clearSel(charChips); } }
+
+  // ---- match the snore (no microphone needed) ----
+  var SNORE = {
+    rumble:  {hz:95,  q:1.2, cut:700,  bass:62, name:'Rumble'},
+    buzz:    {hz:260, q:1.1, cut:1500, bass:46, name:'Buzz'},
+    whistle: {hz:650, q:1.3, cut:3500, bass:24, name:'Whistle'}
+  };
+  function synthSnore(center, spread){
+    var pts=[];
+    for(var hz=30; hz<=4000; hz*=1.06){
+      var oct=Math.log(hz/center)/Math.LN2;
+      var v=0.82*Math.exp(-(oct*oct)/(2*spread*spread)) + 0.07;
+      pts.push({hz:hz, v:Math.min(1,v)});
+    }
+    return pts;
+  }
+  function applySnore(key){
+    var s=SNORE[key]; if(!s) return;
+    if(!ctx) buildGraph();
+    if(ctx.state==='suspended') ctx.resume();
+    peak.frequency.setTargetAtTime(s.hz, ctx.currentTime, 0.05);
+    peak.Q.setTargetAtTime(s.q, ctx.currentTime, 0.05);
+    peak.gain.setTargetAtTime(6, ctx.currentTime, 0.05);
+    bass.value=s.bass; expFill(bass); bassVal.textContent='+'+bassToDb(s.bass).toFixed(0)+' dB';
+    lowShelf.gain.setTargetAtTime(bassToDb(s.bass), ctx.currentTime, 0.05);
+    var tv=Math.round(100*Math.log(s.cut/350)/Math.log(9000/350));
+    tone.value=Math.max(0,Math.min(100,tv)); expFill(tone);
+    lowpass.frequency.setTargetAtTime(toneToHz(+tone.value), ctx.currentTime, 0.05);
+    snoreSpectrum={pts:synthSnore(s.hz,0.55), peakHz:s.hz};
+    matchVal.textContent=s.name;
+    presetVal.textContent='Custom'; clearSel(charChips);
+    setStatus('Masking now leans on the '+s.name.toLowerCase()+' band near '+s.hz+' Hz. Set the volume to taste.', false);
+    if(!running) start();
+  }
+  snoreChips.forEach(function(c){ c.addEventListener('click', function(){ clearSel(snoreChips); c.classList.add('sel'); applySnore(c.dataset.snore); }); });
+
+  // ---- listen & adapt (mic, one-shot) ----
+  listen.addEventListener('click', function(){
+    if(listening) return;
+    if(!ctx) buildGraph();
+    if(ctx.state==='suspended') ctx.resume();
+    listening=true; listen.classList.add('listening'); listen.disabled=true;
+    setStatus('Listening… keep quiet and let it hear the snore.', false);
+
+    // duck the masker so the mic measures only the room
+    var restore = running ? volToGain(+vol.value) : 0;
+    if(ctx) master.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+
+    var settled=false, watchdog=setTimeout(function(){ micFail(null); }, 9000);
+    function micFail(e){
+      if(settled) return; settled=true; clearTimeout(watchdog);
+      finishFail(restore);
+      var name = e && e.name;
+      if(name==='NotFoundError' || name==='DevicesNotFoundError'){
+        setStatus("No microphone was found on this device. Use ‘Match the snore’ above instead — it needs no mic.", true);
+      } else {
+        setStatus("Couldn’t reach the mic — the in-app preview blocks it. Open this page in its own browser tab (best on a computer) to allow it, or use ‘Match the snore’ above, which needs no mic.", true);
+      }
+    }
+
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ micFail(null); return; }
+    try{
+      navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})
+      .then(function(stream){
+        if(settled){ stream.getTracks().forEach(function(t){t.stop();}); return; }
+        settled=true; clearTimeout(watchdog);
+        var src = ctx.createMediaStreamSource(stream);
+        var an = ctx.createAnalyser(); an.fftSize=4096; an.smoothingTimeConstant=0; an.minDecibels=-100; an.maxDecibels=-20;
+        src.connect(an); // not connected to destination — no playback
+        var bins=an.frequencyBinCount, held=new Float32Array(bins).fill(-200), buf=new Float32Array(bins);
+        var sr=ctx.sampleRate, dur=5000, t0=performance.now();
+        (function capture(){
+          an.getFloatFrequencyData(buf);
+          for(var i=0;i<bins;i++) if(buf[i]>held[i]) held[i]=buf[i];
+          if(performance.now()-t0 < dur){ requestAnimationFrame(capture); }
+          else { stream.getTracks().forEach(function(tk){tk.stop();}); finish(held,sr,bins,restore); }
+        })();
+      })
+      .catch(micFail);
+    }catch(e){ micFail(e); }
+  });
+
+  function finishFail(restore){
+    listening=false; listen.classList.remove('listening'); listen.disabled=false;
+    if(running&&ctx) master.gain.setTargetAtTime(restore,ctx.currentTime,0.05);
+  }
+
+  function finish(held, sr, bins, restore){
+    listening=false; listen.classList.remove('listening'); listen.disabled=false;
+    if(running&&ctx) master.gain.setTargetAtTime(restore,ctx.currentTime,0.05);
+
+    var binHz=sr/(bins*2);
+    // peak search in snore fundamental range 45–900 Hz
+    var lo=Math.max(1,Math.floor(45/binHz)), hi=Math.min(bins-1,Math.ceil(900/binHz));
+    var peakHz=0, peakDb=-300, ref=-300, k;
+    for(k=lo;k<=hi;k++){ if(held[k]>peakDb){ peakDb=held[k]; peakHz=k*binHz; } }
+    for(k=0;k<bins;k++) if(held[k]>ref) ref=held[k];
+
+    if(peakDb < -85 || ref - peakDb > 18){
+      setStatus("Didn't hear a clear snore. Try again while it's actually happening, with this tab in front.", true);
+      return;
+    }
+
+    // build a sparse spectrum (30 Hz–4 kHz) for the amber overlay, normalised 0..1
+    var pts=[], floor=-95, ceil=Math.max(peakDb,-30);
+    for(var hz=30; hz<=4000; hz*=1.06){
+      var idx=Math.round(hz/binHz); if(idx<1||idx>=bins) continue;
+      var v=(held[idx]-floor)/(ceil-floor); v=Math.max(0,Math.min(1,v));
+      pts.push({hz:hz, v:v});
+    }
+    snoreSpectrum={pts:pts, peakHz:peakHz};
+
+    // shape the masker to cover it: emphasise the snore band, open the tone to clear its harmonics
+    if(ctx){
+      peak.frequency.setTargetAtTime(peakHz, ctx.currentTime, 0.05);
+      peak.gain.setTargetAtTime(6, ctx.currentTime, 0.05);
+    }
+    var targetCut=Math.max(peakHz*3.2, 1600);
+    var tv=Math.round(100*Math.log(targetCut/350)/Math.log(9000/350));
+    tone.value=Math.max(+tone.value, Math.max(0,Math.min(100,tv)));
+    expFill(tone); markCustom();
+    if(ctx) lowpass.frequency.setTargetAtTime(toneToHz(+tone.value),ctx.currentTime,0.05);
+
+    if(!running) start();
+    setStatus('Tuned to the snore near '+Math.round(peakHz)+' Hz. The field now covers that band — nudge the volume to taste.', false);
+  }
+
+  function setStatus(msg, warn){ status.textContent=msg; status.classList.toggle('warn', !!warn); }
+
+  // ---- canvas drawing ----
+  var g = canvas.getContext('2d'), W=0, H=0, dpr=1, phase=0;
+  function size(){
+    dpr=Math.min(window.devicePixelRatio||1, 2);
+    var r=canvas.getBoundingClientRect();
+    W=r.width; H=r.height;
+    canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr);
+    g.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', size);
+  if(window.ResizeObserver) new ResizeObserver(size).observe(canvas);
+  size();
+
+  function xForHz(hz){
+    var t=(Math.log(hz)-Math.log(F_MIN))/(Math.log(F_MAX)-Math.log(F_MIN));
+    return Math.max(0,Math.min(1,t))*W;
+  }
+  function binForHz(hz){
+    var sr=ctx?ctx.sampleRate:44100, bins=freqBins?freqBins.length:1024;
+    return Math.round(hz/(sr/(bins*2)));
+  }
+
+  function draw(){
+    rafId=requestAnimationFrame(draw);
+    g.clearRect(0,0,W,H);
+    if(!reduceMotion) phase+=0.018;
+    var breathe = reduceMotion ? 1 : (0.9 + 0.1*Math.sin(phase));
+
+    // faint frequency guides
+    g.save();
+    g.strokeStyle='rgba(231,233,240,.05)'; g.lineWidth=1;
+    g.fillStyle='rgba(120,127,150,.45)'; g.font='10px ui-monospace,monospace';
+    [100,1000].forEach(function(hz){
+      var x=xForHz(hz);
+      g.beginPath(); g.moveTo(x,0); g.lineTo(x,H); g.stroke();
+      g.fillText(hz>=1000?(hz/1000+'k'):hz, x+5, H-22);
+    });
+    g.restore();
+
+    var base=H-8;
+
+    // amber snore overlay (under the field so the field reads as covering it)
+    if(snoreSpectrum){
+      g.save();
+      g.beginPath(); g.moveTo(0,base);
+      snoreSpectrum.pts.forEach(function(p,i){
+        var x=xForHz(p.hz), y=base-p.v*(H-28);
+        i===0?g.lineTo(x,y):g.lineTo(x,y);
+      });
+      g.lineTo(W,base); g.closePath();
+      g.fillStyle='rgba(232,161,92,.16)'; g.fill();
+      g.beginPath();
+      snoreSpectrum.pts.forEach(function(p,i){
+        var x=xForHz(p.hz), y=base-p.v*(H-28);
+        i===0?g.moveTo(x,y):g.lineTo(x,y);
+      });
+      g.strokeStyle='rgba(232,161,92,.6)'; g.lineWidth=1.5; g.stroke();
+      g.restore();
+    }
+
+    // masking field
+    if(ctx && analyser && running){
+      analyser.getByteFrequencyData(freqBins);
+      var grad=g.createLinearGradient(0,base,0,8);
+      grad.addColorStop(0,'rgba(95,211,196,'+(0.42*breathe)+')');
+      grad.addColorStop(1,'rgba(140,124,224,'+(0.20*breathe)+')');
+      var steps=90, pts=[];
+      for(var i=0;i<=steps;i++){
+        var frac=i/steps;
+        var hz=F_MIN*Math.pow(F_MAX/F_MIN, frac);
+        var b=binForHz(hz); if(b<0)b=0; if(b>=freqBins.length)b=freqBins.length-1;
+        var m=freqBins[b]/255;
+        pts.push({x:frac*W, y:base-m*(H-26)});
+      }
+      g.beginPath(); g.moveTo(0,base);
+      pts.forEach(function(p){g.lineTo(p.x,p.y);});
+      g.lineTo(W,base); g.closePath();
+      g.fillStyle=grad; g.fill();
+
+      g.beginPath();
+      pts.forEach(function(p,i){ i===0?g.moveTo(p.x,p.y):g.lineTo(p.x,p.y); });
+      g.shadowColor='rgba(95,211,196,'+(0.55*breathe)+')'; g.shadowBlur=16;
+      g.strokeStyle='rgba(170,240,228,'+(0.85*breathe)+')'; g.lineWidth=2; g.stroke();
+      g.shadowBlur=0;
+    }
+  }
+
+  // init slider fills + labels
+  expFill(vol); expFill(tone); expFill(bass);
+  bassVal.textContent='+'+bassToDb(+bass.value).toFixed(0)+' dB';
+})();
+</script>
+</body>
+</html>
