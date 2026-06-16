@@ -1,4 +1,4 @@
-Just Download and Go 
+Just Download Html file and Go 
 Adaptive sound masking
 
 Hush
